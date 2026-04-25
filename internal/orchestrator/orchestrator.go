@@ -239,6 +239,8 @@ func getAppEnvironmentVariables(ctx context.Context, app app.ArduinoApp, brickIn
 
 	// Add the APP_HOME directory to the environment variables
 	envs["APP_HOME"] = app.FullPath.String()
+	envs["PIPEWIRE_RUNTIME_DIR"] = "/run/user/1000"
+	envs["XDG_RUNTIME_DIR"] = "/run/user/1000"
 
 	// Pre-select default camera device if available. This can be overridden by the app environment variables (or in future by applab)
 	// This is required because there are some video devices for HW acceleration that are auto registered in /dev but are not real cameras.
