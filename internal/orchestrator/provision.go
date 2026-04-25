@@ -321,8 +321,18 @@ func generateMainComposeFile(
 		},
 		{
 			Type:   "bind",
+			Source: "/run/user/1000/pipewire-0",
+			Target: "/run/user/1000/pipewire-0",
+		},
+		{
+			Type:   "bind",
 			Source: "/dev",
 			Target: "/dev",
+		},
+		{
+			Type:   "bind",
+			Source: "/home/arduino/ArduinoApps/applabapp/asound.conf",
+			Target: "/etc/asound.conf",
 		},
 		{
 			Type:     "bind",
