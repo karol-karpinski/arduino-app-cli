@@ -8,6 +8,7 @@ package handlers
 import (
 	"log/slog"
 	"net/http"
+	"strconv"
 
 	"github.com/docker/cli/cli/command"
 
@@ -46,6 +47,13 @@ func HandleAppStart(
 			verbose = true
 		}
 
+		audioSinkIndex := -1
+		if v := r.URL.Query().Get("audio_output"); v != "" {
+			if idx, err := strconv.Atoi(v); err == nil {
+				audioSinkIndex = idx
+			}
+		}
+
 		app, err := app.Load(id.ToPath())
 		if err != nil {
 			slog.Error("Unable to parse the app.yaml", slog.String("error", err.Error()), slog.String("path", id.String()))
@@ -68,7 +76,7 @@ func HandleAppStart(
 		type log struct {
 			Message string `json:"message"`
 		}
-		if err := orchestrator.StartApp(r.Context(), dockerCli, provisioner, modelsIndex, bricksIndex, servicesIndex, app, cfg, staticStore, platform, verbose, func(item orchestrator.StreamMessage) {
+		if err := orchestrator.StartApp(r.Context(), dockerCli, provisioner, modelsIndex, bricksIndex, servicesIndex, app, cfg, staticStore, platform, audioSinkIndex, verbose, func(item orchestrator.StreamMessage) {
 			switch item.GetType() {
 			case orchestrator.ProgressType:
 				sseStream.Send(render.SSEEvent{Type: "progress", Data: progress(*item.GetProgress())})

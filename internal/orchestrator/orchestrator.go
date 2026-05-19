@@ -101,6 +101,7 @@ func StartApp(
 	cfg config.Configuration,
 	staticStore *store.StaticStore,
 	platform platform.Platform,
+	audioSinkIndex int,
 	verbose bool,
 	cb func(StreamMessage),
 ) error {
@@ -154,7 +155,7 @@ func StartApp(
 	}
 
 	if appToStart.MainPythonFile != nil {
-		envs := getAppEnvironmentVariables(ctx, appToStart, bricksIndex, modelsIndex)
+		envs := getAppEnvironmentVariables(ctx, appToStart, bricksIndex, modelsIndex, audioSinkIndex)
 
 		cb(StreamMessage{data: "python provisioning"})
 		provisionStartProgress := float32(0.0)
@@ -219,7 +220,7 @@ func StartApp(
 // - model configuration variables (variables defined in the model configuration)
 // - brick instance variables (variables defined in the app.yaml for the brick instance)
 // In addition, it adds some useful environment variables like APP_HOME and HOST_IP.
-func getAppEnvironmentVariables(ctx context.Context, app app.ArduinoApp, brickIndex *bricksindex.BricksIndex, modelsIndex *modelsindex.ModelsIndex) helpers.EnvVars {
+func getAppEnvironmentVariables(ctx context.Context, app app.ArduinoApp, brickIndex *bricksindex.BricksIndex, modelsIndex *modelsindex.ModelsIndex, audioSinkIndex int) helpers.EnvVars {
 	envs := make(helpers.EnvVars)
 
 	for _, brick := range app.Descriptor.Bricks {
@@ -257,6 +258,38 @@ func getAppEnvironmentVariables(ctx context.Context, app app.ArduinoApp, brickIn
 			return c.CarrierName
 		})
 		envs["CONFIGURED_CARRIERS"] = strings.Join(carrierNames, ",")
+		if slices.ContainsFunc(mediaCarriers, func(c linuxconfig.Carrier) bool {
+			return c.CarrierName == "media-carrier"
+		}) {
+			if sinks, err := peripherals.GetAudioSinks(); err != nil {
+				slog.Warn("unable to list audio sinks", slog.String("error", err.Error()))
+			} else {
+				var selected *peripherals.AudioSink
+				if audioSinkIndex >= 0 {
+					if audioSinkIndex < len(sinks) {
+						selected = &sinks[audioSinkIndex]
+					} else {
+						slog.Warn("audio sink index out of range", slog.Int("index", audioSinkIndex), slog.Int("total", len(sinks)))
+					}
+				} else {
+					for i := range sinks {
+						if sinks[i].IsDefault {
+							selected = &sinks[i]
+							break
+						}
+					}
+					if selected == nil && len(sinks) > 0 {
+						selected = &sinks[0]
+					}
+				}
+				if selected != nil {
+					if nodeName, ok := peripherals.GetAudioSinkNodeName(selected.PipeWireID); ok {
+						envs["AUDIO_DEVICE"] = nodeName
+					}
+					slog.Debug("selected audio sink", slog.Int("id", selected.PipeWireID), slog.String("name", selected.DisplayName))
+				}
+			}
+		}
 	}
 
 	if hostIP, err := helpers.GetHostIP(); err == nil {
@@ -395,7 +428,7 @@ func RestartApp(
 		}
 	}
 
-	return StartApp(ctx, docker, provisioner, modelsIndex, bricksIndex, servicesIndex, appToStart, cfg, staticStore, platform, verbose, cb)
+	return StartApp(ctx, docker, provisioner, modelsIndex, bricksIndex, servicesIndex, appToStart, cfg, staticStore, platform, -1, verbose, cb)
 }
 
 func StartDefaultApp(
@@ -428,7 +461,7 @@ func StartDefaultApp(
 	}
 
 	// TODO: we need to stop all other running app before starting the default app.
-	if err := StartApp(ctx, docker, provisioner, modelsIndex, bricksIndex, servicesIndex, *app, cfg, staticStore, platform, false, func(sm StreamMessage) {}); err != nil {
+	if err := StartApp(ctx, docker, provisioner, modelsIndex, bricksIndex, servicesIndex, *app, cfg, staticStore, platform, -1, false, func(sm StreamMessage) {}); err != nil {
 		return fmt.Errorf("failed to start app: %w", err)
 	}
 

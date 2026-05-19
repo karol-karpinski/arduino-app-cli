@@ -23,6 +23,7 @@ import (
 
 func newStartCmd(cfg config.Configuration) *cobra.Command {
 	var verbose bool
+	var audioSinkIndex int
 	cmd := &cobra.Command{
 		Use:   "start app_path",
 		Short: "Start an Arduino App",
@@ -35,7 +36,7 @@ func newStartCmd(cfg config.Configuration) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return startHandler(cmd.Context(), cfg, app, verbose)
+			return startHandler(cmd.Context(), cfg, app, audioSinkIndex, verbose)
 		},
 		ValidArgsFunction: completion.ApplicationNamesWithFilterFunc(cfg, func(apps orchestrator.AppInfo) bool {
 			return apps.Status != orchestrator.StatusStarting &&
@@ -44,11 +45,12 @@ func newStartCmd(cfg config.Configuration) *cobra.Command {
 	}
 
 	cmd.Flags().BoolVarP(&verbose, "verbose", "v", false, "Enable verbose output")
+	cmd.Flags().IntVar(&audioSinkIndex, "output", -1, "Audio sink index to use (from wpctl status). Defaults to the system default sink.")
 
 	return cmd
 }
 
-func startHandler(ctx context.Context, cfg config.Configuration, app app.ArduinoApp, verbose bool) error {
+func startHandler(ctx context.Context, cfg config.Configuration, app app.ArduinoApp, audioSinkIndex int, verbose bool) error {
 	out, _, getResult := feedback.OutputStreams()
 
 	err := orchestrator.StartApp(
@@ -62,6 +64,7 @@ func startHandler(ctx context.Context, cfg config.Configuration, app app.Arduino
 		cfg,
 		servicelocator.GetStaticStore(),
 		servicelocator.GetPlatform(),
+		audioSinkIndex,
 		verbose,
 		func(message orchestrator.StreamMessage) {
 			switch message.GetType() {

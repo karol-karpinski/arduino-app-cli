@@ -330,11 +330,6 @@ func generateMainComposeFile(
 			Target: "/dev",
 		},
 		{
-			Type:   "bind",
-			Source: "/home/arduino/ArduinoApps/applabapp/asound.conf",
-			Target: "/etc/asound.conf",
-		},
-		{
 			Type:     "bind",
 			Source:   "/run/udev",
 			Target:   "/run/udev",

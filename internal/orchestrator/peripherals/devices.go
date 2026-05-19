@@ -7,10 +7,13 @@ package peripherals
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -172,6 +175,228 @@ func HasVirtualDevice(deviceClass DeviceClass, devices []string) bool {
 		}
 	}
 	return false
+}
+
+// AudioSink represents a PipeWire audio sink or source.
+type AudioSink struct {
+	ListIndex   int
+	PipeWireID  int
+	DisplayName string
+	IsDefault   bool
+	Processes   []string // processes currently using this sink/source
+}
+
+var nodeNameRE = regexp.MustCompile(`node\.name\s*=\s*"([^"]+)"`)
+
+// AudioDevices holds all PipeWire audio sinks and sources found on the host.
+type AudioDevices struct {
+	Sinks   []AudioSink
+	Sources []AudioSink
+}
+
+// GetAudioDevices returns all PipeWire audio sinks and sources, including which
+// processes are currently using each one.
+func GetAudioDevices() (AudioDevices, error) {
+	out, err := exec.Command("wpctl", "status").Output()
+	if err != nil {
+		return AudioDevices{}, fmt.Errorf("unable to run wpctl status: %w", err)
+	}
+	s := string(out)
+	sinks := parseAudioSubsection(s, "Sinks")
+	sources := parseAudioSubsection(s, "Sources")
+
+	processesByNode, err := getProcessesByNode()
+	if err != nil {
+		slog.Warn("unable to get audio process info", slog.String("error", err.Error()))
+	} else {
+		for i := range sinks {
+			sinks[i].Processes = processesByNode[sinks[i].PipeWireID]
+		}
+		for i := range sources {
+			sources[i].Processes = processesByNode[sources[i].PipeWireID]
+		}
+	}
+
+	return AudioDevices{Sinks: sinks, Sources: sources}, nil
+}
+
+// getProcessesByNode uses pw-dump to build a map from sink/source node ID to
+// the list of application names currently streaming to/from that node.
+//
+// PipeWire link direction:
+//   - Sink consumers:   Stream/Output/Audio node → link(output=stream, input=sink)
+//   - Source consumers: link(output=source, input=stream) ← Stream/Input/Audio node
+func getProcessesByNode() (map[int][]string, error) {
+	out, err := exec.Command("pw-dump").Output()
+	if err != nil {
+		return nil, fmt.Errorf("unable to run pw-dump: %w", err)
+	}
+
+	var objects []struct {
+		ID   int             `json:"id"`
+		Type string          `json:"type"`
+		Info json.RawMessage `json:"info"`
+	}
+	if err := json.Unmarshal(out, &objects); err != nil {
+		return nil, fmt.Errorf("unable to parse pw-dump output: %w", err)
+	}
+
+	type nodeInfo struct {
+		Props map[string]any `json:"props"`
+	}
+	type linkInfo struct {
+		OutputNodeID int `json:"output-node-id"`
+		InputNodeID  int `json:"input-node-id"`
+	}
+
+	// stream node ID → application name
+	outputStreams := map[int]string{} // Stream/Output/Audio (playing to a sink)
+	inputStreams := map[int]string{}  // Stream/Input/Audio  (recording from a source)
+
+	type link struct{ out, in int }
+	var links []link
+
+	for _, obj := range objects {
+		switch obj.Type {
+		case "PipeWire:Interface:Node":
+			var info nodeInfo
+			if err := json.Unmarshal(obj.Info, &info); err != nil {
+				continue
+			}
+			mediaClass, _ := info.Props["media.class"].(string)
+			if mediaClass != "Stream/Output/Audio" && mediaClass != "Stream/Input/Audio" {
+				continue
+			}
+			appName, _ := info.Props["application.name"].(string)
+			if appName == "" {
+				appName, _ = info.Props["node.name"].(string)
+			}
+			if appName == "" {
+				continue
+			}
+			if mediaClass == "Stream/Output/Audio" {
+				outputStreams[obj.ID] = appName
+			} else {
+				inputStreams[obj.ID] = appName
+			}
+
+		case "PipeWire:Interface:Link":
+			var info linkInfo
+			if err := json.Unmarshal(obj.Info, &info); err != nil {
+				continue
+			}
+			links = append(links, link{out: info.OutputNodeID, in: info.InputNodeID})
+		}
+	}
+
+	result := map[int][]string{}
+	for _, l := range links {
+		// Sink consumer: stream(out) → sink(in)
+		if appName, ok := outputStreams[l.out]; ok {
+			result[l.in] = appendUnique(result[l.in], appName)
+		}
+		// Source consumer: source(out) → stream(in)
+		if appName, ok := inputStreams[l.in]; ok {
+			result[l.out] = appendUnique(result[l.out], appName)
+		}
+	}
+	return result, nil
+}
+
+func appendUnique(slice []string, s string) []string {
+	for _, v := range slice {
+		if v == s {
+			return slice
+		}
+	}
+	return append(slice, s)
+}
+
+// GetAudioSinks returns all PipeWire audio sinks by parsing `wpctl status`.
+func GetAudioSinks() ([]AudioSink, error) {
+	d, err := GetAudioDevices()
+	return d.Sinks, err
+}
+
+func parseAudioSubsection(output, subsection string) []AudioSink {
+	var results []AudioSink
+	inAudio := false
+	inSubsection := false
+	listIdx := 0
+
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+
+		if trimmed == "Audio" {
+			inAudio, inSubsection = true, false
+			continue
+		}
+		if trimmed == "Video" || trimmed == "Settings" {
+			inAudio, inSubsection = false, false
+			continue
+		}
+		if !inAudio {
+			continue
+		}
+		if strings.Contains(line, subsection+":") {
+			inSubsection = true
+			continue
+		}
+		if strings.ContainsAny(line, "├└") {
+			inSubsection = false
+			continue
+		}
+		if !inSubsection {
+			continue
+		}
+
+		clean := strings.TrimLeft(line, " │")
+		if clean == "" {
+			continue
+		}
+		isDefault := strings.HasPrefix(clean, "*")
+		clean = strings.TrimLeft(clean, "* ")
+
+		dotIdx := strings.Index(clean, ".")
+		if dotIdx <= 0 {
+			continue
+		}
+		id, err := strconv.Atoi(strings.TrimSpace(clean[:dotIdx]))
+		if err != nil {
+			continue
+		}
+		rest := strings.TrimSpace(clean[dotIdx+1:])
+		if bracketIdx := strings.Index(rest, "["); bracketIdx >= 0 {
+			rest = strings.TrimSpace(rest[:bracketIdx])
+		}
+		if rest == "" {
+			continue
+		}
+
+		results = append(results, AudioSink{
+			ListIndex:   listIdx,
+			PipeWireID:  id,
+			DisplayName: rest,
+			IsDefault:   isDefault,
+		})
+		listIdx++
+	}
+	return results
+}
+
+// GetAudioSinkNodeName returns the stable PipeWire node name for a given sink ID
+// by running `wpctl inspect <id>` and parsing the node.name property.
+func GetAudioSinkNodeName(pipewireID int) (string, bool) {
+	out, err := exec.Command("wpctl", "inspect", strconv.Itoa(pipewireID)).Output()
+	if err != nil {
+		slog.Warn("unable to run wpctl inspect", slog.Int("id", pipewireID), slog.String("error", err.Error()))
+		return "", false
+	}
+	if m := nodeNameRE.FindSubmatch(out); m != nil {
+		return string(m[1]), true
+	}
+	slog.Warn("node.name not found in wpctl inspect output", slog.Int("id", pipewireID))
+	return "", false
 }
 
 func HasCSICamera(carriers []linuxconfig.Carrier) bool {

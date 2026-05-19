@@ -691,6 +691,12 @@ paths:
         schema:
           description: Return a verbose output. Default is false.
           type: boolean
+      - description: Index of the PipeWire audio sink to use (from wpctl status list order). Defaults to the system default sink when omitted.
+        in: query
+        name: audio_output
+        schema:
+          description: Index of the PipeWire audio sink to use.
+          type: integer
       - description: application identifier.
         in: path
         name: id
