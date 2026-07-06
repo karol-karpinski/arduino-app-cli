@@ -5,7 +5,9 @@
 
 package update
 
-import "go.bug.st/f"
+import (
+	"go.bug.st/f"
+)
 
 // EventType defines the type of upgrade event.
 type EventType int
@@ -16,14 +18,16 @@ const (
 	RestartEvent
 	DoneEvent
 	ErrorEvent
+	WarningEvent
 )
 
 // Event represents a single event in the upgrade process.
 type Event struct {
 	Type EventType
 
-	data string
-	err  error // error field for error events
+	data     string
+	err      error    // error field for error events
+	warnings []string // warning field for warning events
 }
 
 func (t EventType) String() string {
@@ -38,6 +42,8 @@ func (t EventType) String() string {
 		return "done"
 	case ErrorEvent:
 		return "error"
+	case WarningEvent:
+		return "warning"
 	default:
 		panic("unreachable")
 	}
@@ -57,6 +63,23 @@ func NewErrorEvent(err error) Event {
 	}
 }
 
+// NewWarningEvent creates a real-time notification of a single non-blocking
+// failure. The aggregated list is carried by the terminal done event instead.
+func NewWarningEvent(warning string) Event {
+	return Event{
+		Type: WarningEvent,
+		data: warning,
+	}
+}
+
+func NewDoneEvent(data string, warnings []string) Event {
+	return Event{
+		Type:     DoneEvent,
+		data:     data,
+		warnings: warnings,
+	}
+}
+
 func (e Event) GetData() string {
 	f.Assert(e.Type != ErrorEvent, "not a data event")
 	return e.data
@@ -65,6 +88,11 @@ func (e Event) GetData() string {
 func (e Event) GetError() error {
 	f.Assert(e.Type == ErrorEvent, "not an error event")
 	return e.err
+}
+
+func (e Event) GetWarnings() []string {
+	f.Assert(e.Type == DoneEvent, "not a done event")
+	return e.warnings
 }
 
 type PackageType string

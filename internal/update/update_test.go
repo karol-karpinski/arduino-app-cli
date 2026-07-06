@@ -8,6 +8,7 @@ package update
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -190,6 +191,7 @@ func TestManagerUpgradePackages(t *testing.T) {
 		svc1Err    error
 		svc2Err    error
 		expectEvts []EventType // expected last event type from broadcast
+		warnings   []string    // expected warnings from broadcast
 	}{
 		{
 			name:       "both services upgrade successfully",
@@ -197,16 +199,18 @@ func TestManagerUpgradePackages(t *testing.T) {
 			expectEvts: []EventType{DoneEvent},
 		},
 		{
-			name:       "arduino service fails, deb succeeds",
-			packages:   []UpgradablePackage{{Type: Arduino, Name: "arduino:zephyr", ToVersion: "2.0"}, {Type: Debian, Name: "pkg1", ToVersion: "1.1"}},
-			svc1Err:    errors.New("arduino upgrade failed"),
-			expectEvts: []EventType{ErrorEvent, DoneEvent}, // should continue to deb upgrade and complete
+			name:     "arduino service fails, deb succeeds",
+			packages: []UpgradablePackage{{Type: Arduino, Name: "arduino:zephyr", ToVersion: "2.0"}, {Type: Debian, Name: "pkg1", ToVersion: "1.1"}},
+			svc1Err:  errors.New("arduino upgrade failed"),
+			// arduino failure is non-blocking: it is emitted as a warning and reported in the final done event.
+			expectEvts: []EventType{WarningEvent, DoneEvent},
+			warnings:   []string{fmt.Sprintf("failed to upgrade Arduino packages: %v", errors.New("arduino upgrade failed"))},
 		},
 		{
 			name:     "deb service fails",
 			packages: []UpgradablePackage{{Type: Debian, Name: "pkg1", ToVersion: "1.1"}},
 			svc2Err:  errors.New("deb upgrade failed"),
-			// FIXME: we should alwas return Done?
+			// deb failure is blocking: the operation ends with an error and no done event.
 			expectEvts: []EventType{ErrorEvent},
 		},
 	}
@@ -231,15 +235,17 @@ func TestManagerUpgradePackages(t *testing.T) {
 			err := m.UpgradePackages(context.Background(), tc.packages)
 			require.NoError(t, err, "unexpected error starting upgrade")
 
-			// Collect the last event
+			// Collect the events until the terminal done event (or timeout).
 			timeout := time.After(1 * time.Second)
 			var events []EventType
+			var doneWarnings []string
 		loop:
 			for {
 				select {
 				case ev := <-ch:
 					events = append(events, ev.Type)
 					if ev.Type == DoneEvent {
+						doneWarnings = ev.GetWarnings()
 						break loop
 					}
 				case <-timeout:
@@ -248,6 +254,7 @@ func TestManagerUpgradePackages(t *testing.T) {
 			}
 
 			assert.Equal(t, tc.expectEvts, events, "unexpected event sequence")
+			assert.Equal(t, tc.warnings, doneWarnings, "unexpected warnings")
 		})
 	}
 }

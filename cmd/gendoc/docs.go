@@ -1024,8 +1024,18 @@ Contains a string with the message that the upgrade is completed and the system 
 'event: restarting'
 'data: Upgrade completed. Restarting'
 
+**Event 'warning'**:
+Real-time notification of a single non-blocking failure (e.g. an Arduino platform that failed to upgrade). It does not end the operation and the same message is also summarized in the final 'done' event.
+'event: warning'
+'data: "failed to upgrade Arduino packages: ..."'
+
+**Event 'done'**:
+Terminal event of a successful operation. Contains a JSON object with a message and the list of non-blocking warnings collected during the upgrade (omitted when empty).
+'event: done'
+'data: {"message":"Update completed","warnings":["failed to upgrade Arduino packages: ..."]}'
+
 **Event 'error'**:
-Contains a JSON object with the details of an error.
+Contains a JSON object with the details of a blocking error that ends the operation.
 'event: error'
 'data: {"code":"internal_service_err","message":"An error occurred during operation"}'
 `,

@@ -109,9 +109,11 @@ func (m *Manager) ListUpgradablePackages(ctx context.Context, matcher func(Upgra
 }
 
 func (m *Manager) UpgradePackages(ctx context.Context, pkgs []UpgradablePackage) error {
+	var warnings []string
 	ctx = context.WithoutCancel(ctx)
 	var debPkgs []PackageInfo
 	var arduinoPlatform []PackageInfo
+
 	for _, v := range pkgs {
 		switch v.Type {
 		case Arduino:
@@ -137,9 +139,12 @@ func (m *Manager) UpgradePackages(ctx context.Context, pkgs []UpgradablePackage)
 		// we need to re run the upgrade because the orchestrator interrupted
 		// in the middle the upgrade of the cores.
 		if err := m.arduinoPlatformUpdateService.UpgradePackages(ctx, arduinoPlatform, m.broadcast); err != nil {
-			m.broadcast(NewErrorEvent(fmt.Errorf("failed to upgrade Arduino packages: %w", err)))
-
-			// continue with deb packages upgrade.
+			// Upgrading the Arduino platform is non-blocking: report it as a warning
+			// and keep going with the apt upgrade. The warning is also summarized in
+			// the final done event. See https://github.com/arduino/arduino-app-cli/issues/382.
+			warning := fmt.Sprintf("failed to upgrade Arduino packages: %v", err)
+			m.broadcast(NewWarningEvent(warning))
+			warnings = append(warnings, warning)
 		}
 
 		if err := m.debUpdateService.UpgradePackages(ctx, debPkgs, m.broadcast); err != nil {
@@ -147,7 +152,7 @@ func (m *Manager) UpgradePackages(ctx context.Context, pkgs []UpgradablePackage)
 			return
 		}
 
-		m.broadcast(NewDataEvent(DoneEvent, "Update completed"))
+		m.broadcast(NewDoneEvent("Update completed", warnings))
 	}()
 	return nil
 }
