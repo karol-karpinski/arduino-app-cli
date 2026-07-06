@@ -59,8 +59,6 @@ type UpdateCheckResult struct {
 	Packages []update.UpgradablePackage `json:"updates"`
 }
 
-// UpdateDoneData is the payload of the terminal "done" SSE event. Warnings lists
-// the non-blocking failures happened during the upgrade (empty on a clean run).
 type UpdateDoneData struct {
 	Message  string   `json:"message"`
 	Warnings []string `json:"warnings,omitempty"`
@@ -169,8 +167,6 @@ func HandleUpdateEvents(updater *update.Manager) http.HandlerFunc {
 						},
 					})
 				default:
-					// Includes the real-time "warning" event: a single string, like the
-					// other log-style events. The aggregate list lives in the done event.
 					sseStream.Send(render.SSEEvent{
 						Type: event.Type.String(),
 						Data: event.GetData(),

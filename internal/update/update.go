@@ -139,9 +139,6 @@ func (m *Manager) UpgradePackages(ctx context.Context, pkgs []UpgradablePackage)
 		// we need to re run the upgrade because the orchestrator interrupted
 		// in the middle the upgrade of the cores.
 		if err := m.arduinoPlatformUpdateService.UpgradePackages(ctx, arduinoPlatform, m.broadcast); err != nil {
-			// Upgrading the Arduino platform is non-blocking: report it as a warning
-			// and keep going with the apt upgrade. The warning is also summarized in
-			// the final done event. See https://github.com/arduino/arduino-app-cli/issues/382.
 			warning := fmt.Sprintf("failed to upgrade Arduino packages: %v", err)
 			m.broadcast(NewWarningEvent(warning))
 			warnings = append(warnings, warning)
