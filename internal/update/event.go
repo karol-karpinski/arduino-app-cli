@@ -25,9 +25,8 @@ const (
 type Event struct {
 	Type EventType
 
-	data     string
-	err      error    // error field for error events
-	warnings []string // warning field for warning events
+	data string
+	err  error // error field for error events
 }
 
 func (t EventType) String() string {
@@ -63,20 +62,12 @@ func NewErrorEvent(err error) Event {
 	}
 }
 
-// NewWarningEvent creates a real-time notification of a single non-blocking
-// failure. The aggregated list is carried by the terminal done event instead.
+// NewWarningEvent creates a real-time notification of a non-blocking failure.
+// Unlike an error event, it does not end the upgrade operation.
 func NewWarningEvent(warning string) Event {
 	return Event{
 		Type: WarningEvent,
 		data: warning,
-	}
-}
-
-func NewDoneEvent(data string, warnings []string) Event {
-	return Event{
-		Type:     DoneEvent,
-		data:     data,
-		warnings: warnings,
 	}
 }
 
@@ -88,11 +79,6 @@ func (e Event) GetData() string {
 func (e Event) GetError() error {
 	f.Assert(e.Type == ErrorEvent, "not an error event")
 	return e.err
-}
-
-func (e Event) GetWarnings() []string {
-	f.Assert(e.Type == DoneEvent, "not a done event")
-	return e.warnings
 }
 
 type PackageType string

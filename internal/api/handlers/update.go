@@ -59,11 +59,6 @@ type UpdateCheckResult struct {
 	Packages []update.UpgradablePackage `json:"updates"`
 }
 
-type UpdateDoneData struct {
-	Message  string   `json:"message"`
-	Warnings []string `json:"warnings,omitempty"`
-}
-
 func HandleUpdateApply(updater *update.Manager) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		queryParams := r.URL.Query()
@@ -147,8 +142,7 @@ func HandleUpdateEvents(updater *update.Manager) http.HandlerFunc {
 					slog.Info("APT event channel closed, stopping SSE stream")
 					return
 				}
-				switch event.Type {
-				case update.ErrorEvent:
+				if event.Type == update.ErrorEvent {
 					err := event.GetError()
 					code := render.InternalServiceErr
 					if c := update.GetUpdateErrorCode(err); c != update.UnknownErrorCode {
@@ -158,15 +152,9 @@ func HandleUpdateEvents(updater *update.Manager) http.HandlerFunc {
 						Code:    code,
 						Message: err.Error(),
 					})
-				case update.DoneEvent:
-					sseStream.Send(render.SSEEvent{
-						Type: event.Type.String(),
-						Data: UpdateDoneData{
-							Message:  event.GetData(),
-							Warnings: event.GetWarnings(),
-						},
-					})
-				default:
+				} else {
+					// Includes the "warning" event: a single string, like the other
+					// log-style events.
 					sseStream.Send(render.SSEEvent{
 						Type: event.Type.String(),
 						Data: event.GetData(),

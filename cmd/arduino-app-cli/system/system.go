@@ -115,19 +115,11 @@ func newUpdateCmd(cfg config.Configuration) *cobra.Command {
 
 			events := updater.Subscribe()
 			for event := range events {
-				switch event.Type {
-				case update.ErrorEvent:
+				if event.Type == update.ErrorEvent {
 					// TODO: add colors to error messages
 					err := event.GetError()
 					feedback.Printf("Error: %s [%s]", err.Error(), update.GetUpdateErrorCode(err))
-				case update.WarningEvent:
-					feedback.Printf("[warning] %s", event.GetData())
-				case update.DoneEvent:
-					feedback.Printf("[%s] %s", event.Type.String(), event.GetData())
-					for _, w := range event.GetWarnings() {
-						feedback.Printf("[warning] %s", w)
-					}
-				default:
+				} else {
 					feedback.Printf("[%s] %s", event.Type.String(), event.GetData())
 				}
 
