@@ -153,8 +153,6 @@ func HandleUpdateEvents(updater *update.Manager) http.HandlerFunc {
 						Message: err.Error(),
 					})
 				} else {
-					// Includes the "warning" event: a single string, like the other
-					// log-style events.
 					sseStream.Send(render.SSEEvent{
 						Type: event.Type.String(),
 						Data: event.GetData(),

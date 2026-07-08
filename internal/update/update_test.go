@@ -197,10 +197,9 @@ func TestManagerUpgradePackages(t *testing.T) {
 			expectEvts: []EventType{DoneEvent},
 		},
 		{
-			name:     "arduino service fails, deb succeeds",
-			packages: []UpgradablePackage{{Type: Arduino, Name: "arduino:zephyr", ToVersion: "2.0"}, {Type: Debian, Name: "pkg1", ToVersion: "1.1"}},
-			svc1Err:  errors.New("arduino upgrade failed"),
-			// arduino failure is non-blocking: it is emitted as a warning, then the upgrade completes.
+			name:       "arduino service fails, deb succeeds",
+			packages:   []UpgradablePackage{{Type: Arduino, Name: "arduino:zephyr", ToVersion: "2.0"}, {Type: Debian, Name: "pkg1", ToVersion: "1.1"}},
+			svc1Err:    errors.New("arduino upgrade failed"),
 			expectEvts: []EventType{WarningEvent, DoneEvent},
 		},
 		{

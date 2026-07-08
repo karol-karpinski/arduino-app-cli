@@ -62,8 +62,6 @@ func NewErrorEvent(err error) Event {
 	}
 }
 
-// NewWarningEvent creates a real-time notification of a non-blocking failure.
-// Unlike an error event, it does not end the upgrade operation.
 func NewWarningEvent(warning string) Event {
 	return Event{
 		Type: WarningEvent,
