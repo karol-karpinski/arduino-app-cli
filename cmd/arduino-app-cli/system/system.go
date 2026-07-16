@@ -123,7 +123,9 @@ func newUpdateCmd(cfg config.Configuration) *cobra.Command {
 					feedback.Printf("[%s] %s", event.Type.String(), event.GetData())
 				}
 
-				if event.Type == update.DoneEvent {
+				// ErrorEvent is terminal (done with error): it is not followed
+				// by a DoneEvent, so we must stop consuming events here too.
+				if event.Type == update.DoneEvent || event.Type == update.ErrorEvent {
 					break
 				}
 			}
