@@ -148,7 +148,7 @@ func StartApp(
 				continue
 			}
 			slog.Debug("stopping failed app before starting a new one", slog.String("name", failedApp.Name))
-			if err := StopApp(ctx, docker, platform, failedApp, nil); err != nil {
+			if err := StopApp(ctx, docker, platform, failedApp, cfg, nil); err != nil {
 				slog.Warn("failed to stop failed app", slog.String("name", failedApp.Name), slog.String("error", err.Error()))
 			}
 		}
@@ -162,7 +162,7 @@ func StartApp(
 		// session count for as long as this app needs audio, so an unrelated
 		// SSH/lightdm session logging out doesn't pull PipeWire out from
 		// under it.
-		if err := pipewire.EnableLinger(ctx); err != nil {
+		if err := pipewire.EnableLinger(ctx, *cfg.DataDir(), os.Geteuid()); err != nil {
 			return fmt.Errorf("failed to enable audio service linger: %w", err)
 		}
 		if err := pipewire.StartPipewire(ctx); err != nil {
@@ -317,7 +317,7 @@ func getAppEnvironmentVariables(ctx context.Context, app app.ArduinoApp, brickIn
 	return envs
 }
 
-func stopAppWithCmd(ctx context.Context, docker command.Cli, platform platform.Platform, app app.ArduinoApp, cmd string, cb func(StreamMessage)) error {
+func stopAppWithCmd(ctx context.Context, docker command.Cli, platform platform.Platform, app app.ArduinoApp, cfg config.Configuration, cmd string, cb func(StreamMessage)) error {
 	if cb == nil {
 		cb = func(StreamMessage) {}
 	}
@@ -333,7 +333,7 @@ func stopAppWithCmd(ctx context.Context, docker command.Cli, platform platform.P
 		slog.Debug("unable to set status leds", slog.String("error", err.Error()))
 	}
 
-	if err := pipewire.DisableLinger(ctx); err != nil {
+	if err := pipewire.DisableLinger(ctx, *cfg.DataDir(), os.Geteuid()); err != nil {
 		slog.Debug("unable to disable audio service linger", slog.String("error", err.Error()))
 	}
 
@@ -391,12 +391,12 @@ func stopAppWithCmd(ctx context.Context, docker command.Cli, platform platform.P
 	return nil
 }
 
-func StopApp(ctx context.Context, dockerClient command.Cli, platform platform.Platform, app app.ArduinoApp, cb func(StreamMessage)) error {
-	return stopAppWithCmd(ctx, dockerClient, platform, app, "stop", cb)
+func StopApp(ctx context.Context, dockerClient command.Cli, platform platform.Platform, app app.ArduinoApp, cfg config.Configuration, cb func(StreamMessage)) error {
+	return stopAppWithCmd(ctx, dockerClient, platform, app, cfg, "stop", cb)
 }
 
-func StopAndDestroyApp(ctx context.Context, dockerClient command.Cli, platform platform.Platform, app app.ArduinoApp, cb func(StreamMessage)) error {
-	if err := stopAppWithCmd(ctx, dockerClient, platform, app, "down", cb); err != nil {
+func StopAndDestroyApp(ctx context.Context, dockerClient command.Cli, platform platform.Platform, app app.ArduinoApp, cfg config.Configuration, cb func(StreamMessage)) error {
+	if err := stopAppWithCmd(ctx, dockerClient, platform, app, cfg, "down", cb); err != nil {
 		return err
 	}
 	if err := cleanAppCacheFiles(app, cb); err != nil {
@@ -448,7 +448,7 @@ func RestartApp(
 			return fmt.Errorf("another app %q is running", runningApp.Name)
 		}
 
-		if err := StopApp(ctx, docker, platform, *runningApp, cb); err != nil {
+		if err := StopApp(ctx, docker, platform, *runningApp, cfg, cb); err != nil {
 			return err
 		}
 	}
@@ -878,9 +878,9 @@ func CloneApp(
 	return CloneAppResponse{ID: id}, nil
 }
 
-func DeleteApp(ctx context.Context, dockerClient command.Cli, platform platform.Platform, app app.ArduinoApp) error {
+func DeleteApp(ctx context.Context, dockerClient command.Cli, platform platform.Platform, app app.ArduinoApp, cfg config.Configuration) error {
 	// We try to remove docker related resources at best effort
-	_ = StopAndDestroyApp(ctx, dockerClient, platform, app, func(StreamMessage) {})
+	_ = StopAndDestroyApp(ctx, dockerClient, platform, app, cfg, func(StreamMessage) {})
 	// TODO: Shall we report stop error?
 
 	return app.FullPath.RemoveAll()
